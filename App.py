@@ -1,48 +1,94 @@
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
 
 
-df = pd.read_csv("sales.csv")
+df = pd.read_csv("rfm_customer_data_enhanced.csv")
 
 
-df.dropna(inplace=True)
-df.drop_duplicates(inplace=True)
+print("Dataset Preview:")
+print(df.head())
+
+print("\nColumns:")
+print(df.columns)
 
 
-df['Date'] = pd.to_datetime(df['Date'])
+df = df.dropna(subset=['CustomerID'])
 
 
-df['Total'] = df['Quantity'] * df['Price']
+df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
 
 
-reference_date = df['Date'].max() + pd.Timedelta(days=1)
+snapshot_date = df['InvoiceDate'].max() + pd.Timedelta(days=1)
 
 
 rfm = df.groupby('CustomerID').agg({
-    'Date': lambda x: (reference_date - x.max()).days,
-    'CustomerID': 'count',
-    'Total': 'sum'
-})
+    'InvoiceDate': lambda x: (snapshot_date - x.max()).days,
+    'InvoiceNo': 'nunique',
+    'TotalAmount': 'sum'
+}).reset_index()
 
-rfm.columns = ['Recency', 'Frequency', 'Monetary']
+
+rfm.columns = ['CustomerID', 'Recency', 'Frequency', 'Monetary']
+
+print("\nRFM Table:")
+print(rfm.head())
+
+
+X = rfm[['Recency', 'Frequency', 'Monetary']]
 
 
 scaler = StandardScaler()
-rfm_scaled = scaler.fit_transform(rfm)
+X_scaled = scaler.fit_transform(X)
 
 
-kmeans = KMeans(n_clusters=3, random_state=42)
-rfm['Cluster'] = kmeans.fit_predict(rfm_scaled)
+wcss = []
 
+for i in range(1, 11):
+    kmeans = KMeans(
+        n_clusters=i,
+        random_state=42,
+        n_init=10
+    )
+    kmeans.fit(X_scaled)
+    wcss.append(kmeans.inertia_)
 
-plt.scatter(rfm['Recency'], rfm['Monetary'], c=rfm['Cluster'])
-plt.xlabel("Recency")
-plt.ylabel("Monetary")
-plt.title("Customer Segmentation")
+plt.figure(figsize=(8, 5))
+plt.plot(range(1, 11), wcss, marker='o')
+plt.title("Elbow Method")
+plt.xlabel("Number of Clusters")
+plt.ylabel("WCSS")
+plt.grid(True)
 plt.show()
 
 
-rfm.to_csv("rfm_output.csv", index=False)
+kmeans = KMeans(
+    n_clusters=4,
+    random_state=42,
+    n_init=10
+)
+
+rfm['Cluster'] = kmeans.fit_predict(X_scaled)
+
+print("\nClustered Customers:")
+print(rfm.head())
+
+
+plt.figure(figsize=(8, 5))
+plt.scatter(
+    rfm['Frequency'],
+    rfm['Monetary'],
+    c=rfm['Cluster']
+)
+
+plt.title("Customer Segmentation using K-Means")
+plt.xlabel("Frequency")
+plt.ylabel("Monetary")
+plt.show()
+
+
+rfm.to_csv("RFM_Segments.csv", index=False)
+
+print("\nRFM Segmentation completed successfully!")
+print("Output saved as: RFM_Segments.csv")
